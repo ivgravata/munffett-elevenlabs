@@ -6,11 +6,12 @@ import http from 'http';
 // --- CONFIGURAÇÃO ---
 const RECALL_API_KEY = process.env.RECALL_API_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+// A ELEVENLABS_API_KEY não é usada diretamente aqui, mas mantemo-la para o futuro
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY; 
 const PORT = process.env.PORT || 3000;
 
-if (!RECALL_API_KEY || !OPENAI_API_KEY || !ELEVENLABS_API_KEY) {
-  throw new Error("As variáveis de ambiente RECALL_API_KEY, OPENAI_API_KEY, e ELEVENLABS_API_KEY são obrigatórias.");
+if (!RECALL_API_KEY || !OPENAI_API_KEY) {
+  throw new Error("As variáveis de ambiente RECALL_API_KEY e OPENAI_API_KEY são obrigatórias.");
 }
 
 const app = express();
@@ -19,57 +20,47 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 const RECALL_API_URL = 'https://us-west-2.recall.ai/api/v1/bot';
+const OPENAI_WS_URL = "wss://api.openai.com/v1/realtime/ws";
 
 // --- LÓGICA DO AGENTE DE VOZ (WEBSOCKET) ---
+// Esta secção funciona como um "relé" entre o bot (na página web) e a OpenAI
 wss.on('connection', async (clientWs) => {
-  console.log('[INFO] Cliente WebSocket (Recall.ai Bot) conectado.');
+  console.log('[INFO] Cliente WebSocket (página web do bot) conectado.');
+  let openaiWs;
 
-  // Esta parte agora irá gerir o fluxo completo
-  clientWs.on('message', async (message) => {
-    const data = JSON.parse(message);
+  try {
+    const headers = { 'Authorization': `Bearer ${OPENAI_API_KEY}` };
+    openaiWs = new WebSocket(OPENAI_WS_URL, { headers });
 
-    // Exemplo de como processar o áudio recebido
-    if (data.type === 'audio' && data.payload) {
-      // 1. Enviar áudio para Speech-to-Text (ex: Deepgram, Google Speech, etc.)
-      // Esta parte é complexa e requer um provedor de STT.
-      // Por agora, vamos simular uma resposta para testar o fluxo de TTS.
+    openaiWs.onopen = () => {
+      console.log('[INFO] Conexão com a OpenAI estabelecida com sucesso.');
+      // A página web do bot irá enviar a configuração da sessão
+    };
 
-      // 2. Obter resposta de um LLM (ex: OpenAI)
-      const textResponse = "Olá, eu sou o Munffett. Como posso ajudar?"; // Resposta simulada
-
-      // 3. Gerar áudio com ElevenLabs usando o seu agent_id
-      const ELEVENLABS_AGENT_ID = 'agent_7101k4b4ha5hf7wve22fvv7kqk0v';
-      const elevenlabsUrl = `https://api.elevenlabs.io/v1/synthesize/${ELEVENLABS_AGENT_ID}`;
-
-      try {
-        const elevenlabsResponse = await fetch(elevenlabsUrl, {
-          method: 'POST',
-          headers: {
-            'xi-api-key': ELEVENLABS_API_KEY,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            text: textResponse
-          })
-        });
-
-        if (elevenlabsResponse.ok) {
-          const audioBuffer = await elevenlabsResponse.arrayBuffer();
-          // 4. Enviar o áudio de volta para o bot do Recall.ai
-          clientWs.send(Buffer.from(audioBuffer));
-          console.log('[INFO] Áudio da ElevenLabs enviado para o bot.');
-        } else {
-          console.error('[ERRO] Falha ao gerar áudio na ElevenLabs:', await elevenlabsResponse.text());
-        }
-      } catch (error) {
-        console.error('[ERRO] Erro ao contactar a API da ElevenLabs:', error.message);
+    clientWs.on('message', (message) => {
+      if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+        // Simplesmente retransmite a mensagem
+        openaiWs.send(message);
       }
-    }
-  });
+    });
 
-  clientWs.onclose = () => {
-    console.log('[INFO] Cliente WebSocket (Recall.ai Bot) desconectado.');
-  };
+    openaiWs.onmessage = (event) => {
+      if (clientWs && clientWs.readyState === WebSocket.OPEN) {
+        // Simplesmente retransmite a mensagem de volta
+        clientWs.send(event.data);
+      }
+    };
+
+    openaiWs.onerror = (error) => console.error('[ERRO] Erro no WebSocket da OpenAI:', error.message);
+    clientWs.onclose = () => {
+      console.log('[INFO] Cliente WebSocket (página web do bot) desconectado.');
+      if (openaiWs) openaiWs.close();
+    };
+
+  } catch (error) {
+    console.error('[ERRO] Falha ao configurar o proxy WebSocket:', error.message);
+    clientWs.close();
+  }
 });
 
 // --- ENDPOINT DA API PARA CRIAR O BOT ---
@@ -82,10 +73,13 @@ app.post('/api/recall/create', async (req, res) => {
       return res.status(400).json({ error: "Campo obrigatório em falta: meeting_url" });
     }
 
-    const PUBLIC_URL = `https://${req.get('host')}`;
-    const WEBSOCKET_URL = PUBLIC_URL.replace('https://', 'wss://');
+    const BACKEND_URL = `https://${req.get('host')}`;
+    const WEBSOCKET_URL = BACKEND_URL.replace('https://', 'wss://');
+    
+    // Usamos a página de demonstração, passando o nosso servidor WebSocket como parâmetro
+    const FRONTEND_URL = `https://recallai-demo.netlify.app?wss=${WEBSOCKET_URL}`;
 
-    console.log(`[INFO] URL do WebSocket para o bot: ${WEBSOCKET_URL}`);
+    console.log(`[INFO] URL da página web do bot: ${FRONTEND_URL}`);
 
     const response = await fetch(RECALL_API_URL, {
       method: 'POST',
@@ -93,10 +87,14 @@ app.post('/api/recall/create', async (req, res) => {
       body: JSON.stringify({
         meeting_url: meeting_url,
         bot_name: "Munffett AI",
-        recording_enabled: false,
-        realtime_media_target: {
-          kind: 'websocket',
-          config: { url: WEBSOCKET_URL }
+        // --- A ARQUITETURA CORRETA, INSPIRADA NO SEU PROJETO ---
+        output_media: {
+          camera: {
+            kind: "webpage",
+            config: {
+              url: FRONTEND_URL
+            }
+          }
         },
         variant: { zoom: "web_4_core" }
       })
@@ -117,7 +115,6 @@ app.post('/api/recall/create', async (req, res) => {
     res.status(500).json({ error: 'Ocorreu um erro interno no servidor.' });
   }
 });
-
 
 // --- INICIAR O SERVIDOR ---
 server.listen(PORT, () => {
