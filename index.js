@@ -38,11 +38,10 @@ wss.on('connection', async (clientWs) => {
       const configMessage = {
         type: 'session_config',
         session_config: {
-          // Estas são as instruções para o seu agente de IA
           instructions: `You are Munffett, a senior investor with a lifetime of experience. Your philosophy is a blend of the long-term, business-focused principles of your mentors, Warren Buffett and Charlie Munger. Stay in character at all times.`,
           voice_id: 'shimmer', // Voz da OpenAI (pode ser alterada)
           output_format: {
-            encoding: 'pcm_16000_16', // Formato de áudio esperado pelo Recall.ai
+            encoding: 'pcm_16000_16', 
             container: 'none'
           }
         }
@@ -90,7 +89,6 @@ app.post('/api/recall/create', async (req, res) => {
       return res.status(400).json({ error: "Campo obrigatório em falta: meeting_url" });
     }
 
-    // A URL pública do seu serviço na Railway
     const PUBLIC_URL = `https://${req.get('host')}`;
     const WEBSOCKET_URL = PUBLIC_URL.replace('https://', 'wss://');
 
@@ -102,8 +100,9 @@ app.post('/api/recall/create', async (req, res) => {
       body: JSON.stringify({
         meeting_url: meeting_url,
         bot_name: "Munffett AI",
-        // --- A CORREÇÃO CRUCIAL ---
-        // Diz ao bot para se conectar ao nosso servidor via WebSocket em vez de gravar
+        // --- A CORREÇÃO FINAL ---
+        // Desativa a gravação para garantir que o bot entre em modo de agente conversacional
+        recording_enabled: false,
         realtime_media_target: {
           kind: 'websocket',
           config: { url: WEBSOCKET_URL }
@@ -133,3 +132,4 @@ app.post('/api/recall/create', async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Servidor a correr na porta ${PORT}`);
 });
+
