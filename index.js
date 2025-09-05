@@ -133,4 +133,3 @@ app.post('/api/recall/create', async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Servidor a correr na porta ${PORT}`);
 });
-
