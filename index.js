@@ -102,7 +102,8 @@ app.post('/api/recall/create', async (req, res) => {
       body: JSON.stringify({
         meeting_url: meeting_url,
         bot_name: "Munffett AI",
-        // Diz ao bot para se conectar ao nosso servidor via WebSocket
+        // --- A CORREÇÃO CRUCIAL ---
+        // Diz ao bot para se conectar ao nosso servidor via WebSocket em vez de gravar
         realtime_media_target: {
           kind: 'websocket',
           config: { url: WEBSOCKET_URL }
