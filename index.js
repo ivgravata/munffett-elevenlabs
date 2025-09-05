@@ -1,6 +1,6 @@
 import express from 'express';
 import fetch from 'node-fetch';
-import { WebSocketServer } from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 import http from 'http';
 
 // --- CONFIGURAÇÃO ---
@@ -86,8 +86,8 @@ app.post('/api/recall/create', async (req, res) => {
   
   try {
     const { meeting_url, agent_id } = req.body;
-    if (!meeting_url || !agent_id) {
-      return res.status(400).json({ error: "Campos obrigatórios em falta: meeting_url e agent_id" });
+    if (!meeting_url) {
+      return res.status(400).json({ error: "Campo obrigatório em falta: meeting_url" });
     }
 
     // A URL pública do seu serviço na Railway
@@ -100,9 +100,8 @@ app.post('/api/recall/create', async (req, res) => {
       method: 'POST',
       headers: { 'Authorization': `Token ${RECALL_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        meeting_url: meetingUrl,
+        meeting_url: meeting_url,
         bot_name: "Munffett AI",
-        // --- A CORREÇÃO CRUCIAL ---
         // Diz ao bot para se conectar ao nosso servidor via WebSocket
         realtime_media_target: {
           kind: 'websocket',
